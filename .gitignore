@@ -1,0 +1,4 @@
+.CondaPkg
+.credentials.yml
+.ipynb_checkpoints
+Manifest.toml
