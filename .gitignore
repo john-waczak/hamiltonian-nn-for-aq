@@ -2,3 +2,5 @@
 .credentials.yml
 .ipynb_checkpoints
 Manifest.toml
+.DS_Store
+data
