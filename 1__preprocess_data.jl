@@ -111,7 +111,7 @@ function process_one_day(datapath::String, sensors_to_include::Vector{String}; �
         push!(Δts, Δt)
     end
 
-    Δt_out = 15
+    #Δt_out = 15
     ts = 0:(Δt_out * 1000):(T_end - T_start).value
 
     # create output dataframe to store results
@@ -181,7 +181,8 @@ paths_to_process = vcat(days2021..., days2022..., days2023...)
 
 # process all of these files and put them in the processed folder
 sensors_to_include
-@showprogress for path ∈ paths_to_process
+p = Progress(length(paths_to_process))
+Threads.@threads for path ∈ paths_to_process
     outname = "measurements"*join(split(path, "/")[end-3:end], "_")*"-central_node_4.csv"
 
     try
@@ -197,8 +198,9 @@ sensors_to_include
         println(e)
     end
 
+    next!(p)
 end
-
+finish!(p)
 
 
 # repeat for other nodes
@@ -233,7 +235,9 @@ paths_to_process = vcat(days2021..., days2022..., days2023...)
 
 # process all of these files and put them in the processed folder
 sensors_to_include
-@showprogress for path ∈ paths_to_process
+
+p = Progress(length(paths_to_process))
+Threads.@threads for path ∈ paths_to_process
     outname = "measurements"*join(split(path, "/")[end-3:end], "_")*"-central_node_1.csv"
 
     try
@@ -249,8 +253,9 @@ sensors_to_include
         println(e)
     end
 
+    next!(p)
 end
-
+finish!(p)
 
 # repeat for other nodes
 
@@ -284,7 +289,9 @@ paths_to_process = vcat(days2021..., days2022..., days2023...)
 
 # process all of these files and put them in the processed folder
 sensors_to_include
-@showprogress for path ∈ paths_to_process
+
+p = Progress(length(paths_to_process))
+Threads.@threads for path ∈ paths_to_process
     outname = "measurements"*join(split(path, "/")[end-3:end], "_")*"-central_node_2.csv"
 
     try
@@ -300,8 +307,9 @@ sensors_to_include
         println(e)
     end
 
+    next!(p)
 end
-
+finish!(p)
 
 
 # now for each dataframe, we want to let's create a new one with rows i and i-1 concatenated
@@ -337,19 +345,32 @@ function generate_multistep_df(path; Nwindow=2)
 end
 
 
-dfs = DataFrame[]
-
+df_final = DataFrame()
 Nwindow = 2
 @showprogress for f ∈ files
-    push!(dfs, generate_multistep_df(f; Nwindow=Nwindow))
+    df = generate_multistep_df(f; Nwindow=Nwindow)
+    df_out = hcat(df[1:end-1,:], rename(x->x*"_next", df[2:end, Not([:ts, :dateTime, :device_name])]))
+    append!(df_final, df_out)
+#    push!(dfs, df[1:end-1,:])
+#    push!(dfs_next, df[2:end, :])
 end
 
-df_final = vcat(dfs...)
+
+# df_final, df_final_next = get_collected_dfs(files)
+
 
 # save final output to new folder in data directory
 if !isdir("data/combined")
     mkpath("data/combined")
 end
 
-CSV.write("data/combined/combined_Nwindow-$(Nwindow).csv", df_final)
+
+gdf = groupby(df_final, :device_name)
+
+keys(gdf)
+
+# write each node to a separate file
+CSV.write("data/combined/central-node-1_Nwindow-$(Nwindow).csv", gdf[(device_name="Central Node 1",)])
+CSV.write("data/combined/central-node-2_Nwindow-$(Nwindow).csv", gdf[(device_name="Central Node 2",)])
+CSV.write("data/combined/central-node-4_Nwindow-$(Nwindow).csv", gdf[(device_name="Central Node 4",)])
 
