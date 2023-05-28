@@ -50,13 +50,13 @@ end
 
 sensors_to_include = [
     "IPS7100",
-    "APDS9002",
+#    "APDS9002",
     "BME680",
-    "GUV001",
-    "TB108L",
-    "TMG3993",
-    "TSL2591",
-    "VEML6075"
+#    "GUV001",
+#    "TB108L",
+#    "TMG3993",
+#    "TSL2591",
+#    "VEML6075"
 ]
 
 
@@ -346,7 +346,7 @@ end
 
 
 df_final = DataFrame()
-Nwindow = 2
+Nwindow = 4
 @showprogress for f ∈ files
     df = generate_multistep_df(f; Nwindow=Nwindow)
     df_out = hcat(df[1:end-1,:], rename(x->x*"_next", df[2:end, Not([:ts, :dateTime, :device_name])]))
