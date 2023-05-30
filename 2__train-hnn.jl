@@ -88,8 +88,8 @@ dataloader = Flux.Data.DataLoader((Xnow_train, Xnext_train); batchsize=64, shuff
 # 2. Define Models
 # -----------------------------------------------------------
 input_dim = size(Xnow_test, 1)
-hidden_dim = 200
-n_manifold = 2
+hidden_dim = 50
+n_manifold = 1
 output_dim = 2*n_manifold
 
 # now define the actual encoder model
@@ -201,17 +201,12 @@ function loss(x_now, x_next, params)
     # the velocity
 
     q_now = qp[1:n_manifold,:]
-    p_now = qp[n_manifold+1:end,:]
-
-    q_next = qp_next[1:n_manifold, :]
-    p_next = qp_next[n_manifold+1:end, :]
-
-    ℓ_coord = mean((p_now .- (q_next .- q_now)).^2)
-
-    # include knob for hnn loss
-    #return mean(ℓ_ae + ℓ_coord + 0.1*ℓ_hnn)
-    return ℓ_ae + ℓ_coord + ℓ_hnn #0.1*ℓ_hnn
+    p_now = qp[n_mHamilton's equations
+    qp_forward = Array(integrate_forward(qp, p_hnn))
+    ℓ_hnn = mean((qp_forward .- qp_next).^2)
+    return ℓ_hnn
 end
+
 
 
 # test loss function and gradient calculation
@@ -236,7 +231,7 @@ end
 
 opt = ADAM(0.001)  # we should set the decay rate too
 
-epochs = 10
+epochs = 1
 for epoch in 1:epochs
     println("epoch: ", epoch)
 
@@ -245,14 +240,83 @@ for epoch in 1:epochs
         Flux.Optimise.update!(opt, params, gs)
         callback()
     end
-    # if epoch % 100 == 1
-    #     callback()
-    # end
-    # callback()
 end
 callback()
 
 
-plot(losses[1:100])
+# do second loop with just hnn loss
 
+opt = ADAM(0.005)  # we should set the decay rate too
+
+epochs = 1
+for epoch in 1:epochs
+    println("epoch: ", epoch)
+
+    for (x, y) in dataloader
+        gs = ReverseDiff.gradient(p -> loss2(x, y, p), params)
+        Flux.Optimise.update!(opt, params, gs)
+        callback()
+    end
+end
+callback()
+
+
+
+plot(losses, ylabel="loss", xlabel="iteration", label="", lw=3)
+
+
+# now let's visualize the Hamiltonian
+p
+
+Xfinal = hcat(Xnow_train, Xnow_test)
+
+qps = encoder(Xfinal)
+
+q_min = minimum(qps[1,:])
+q_max = maximum(qps[1,:])
+p_min = minimum(qps[2,:])
+p_max = maximum(qps[2,:])
+
+q_min
+q_max
+
+npoints = 500
+qs = Float32.(range(3*q_min, stop=3*q_max, length=npoints))
+ps = range(3 * p_min, stop=3*p_max, length=npoints)
+Hs = [Float64(hamiltonian([q, p])[1]) for q ∈ qs, p ∈ ps]
+
+
+p1 = contour(qs,
+             ps,
+             Hs,
+             fill=true,
+             #color=:black,
+             clabels=true,
+             xlabel="q",
+             ylabel="p",
+             title="fitted Hamiltonian",
+             #legend=false
+             )
+
+
+savefig("./hamiltonian_cn_1--2022.pdf")
+savefig("./hamiltonian_cn_1--2022.png")
+
+# times_tot = [times_train..., times_test...]
+# tstart = minimum(times_tot)
+# tend = maximum(times_tot)
+
+# times_as_ints = [(t - tstart).value for t ∈ times_tot]
+
+# scatter!(
+#     p1,
+#     Xnow_test[1,1:10],
+#     Xnow_test[2,1:10],
+#     zcolor=times_as_ints[1:10]
+# )
+
+
+
+
+# times_test
 # for some reason the parameters aren't updating.
