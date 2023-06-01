@@ -44,7 +44,11 @@ function get_data(path; npoints=10_000, npoints_test=500)
 
     names_to_use = [n for n ∈ names(df) if !occursin("pc", n)]
 
-    df = df[year.(df.dateTime) .== 2022, names_to_use]
+    #df = df[year.(df.dateTime) .== 2021, names_to_use]
+    #df = df[year.(df.dateTime) .== 2022, names_to_use]
+    #df = df[year.(df.dateTime) .== 2023, names_to_use]
+    df = df[year.(df.dateTime) .!= 2021, names_to_use]
+    #df = df[month.(df.dateTime) .== 6, names_to_use]
 
     cols_now = [name for name ∈ names(df) if !(name ∈ ["ts", "dateTime", "device_name"]) && !occursin("next", name)]
     cols_next = [name for name ∈ names(df) if occursin("next", name)]
@@ -52,6 +56,8 @@ function get_data(path; npoints=10_000, npoints_test=500)
     for i ∈ 1:length(cols_now)
         println(i, "\t", cols_now[i])
     end
+
+    println("n rows: ", nrow(df))
 
     times = df.dateTime
     Xnow = Float32.(collect(Matrix(df[:, cols_now])'))
@@ -167,14 +173,13 @@ integrate_forward = NeuralHamiltonianDE(
 # integrates them forward by Δt
 
 # this could be problematic... need to make sure this is
-# doing what we intend and actually integrating each column separately. 
+# doing what we intend and actually integrating each column separately.
 @time Array(integrate_forward(rand(Float32, output_dim,10), p_hnn))
 
 
-function loss(x_now, x_next, params)
-    # x_now = Xnow_train[:,1:10]
-    # x_next = Xnext_train[:,1:10]
+const use_simple_hnn_loss::Bool = false
 
+function loss(x_now, x_next, params)
     p_enc = params[1:Np_enc]
     p_dec = params[Np_enc+1:Np_enc+Np_dec]
     p_hnn = params[Np_enc+ Np_dec + 1:end]
@@ -190,20 +195,51 @@ function loss(x_now, x_next, params)
 
     # now integrate our coordinates forward using
     # Hamilton's equations
-    qp_forward = Array(integrate_forward(qp, p_hnn))
-    ℓ_hnn = mean((qp_forward .- qp_next).^2)
-    # simple hnn loss estimate
-    #ℓ_hnn = mean((hnn(qp, p_hnn) .- (qp_next .- qp)./15.0).^2)
 
+    if use_simple_hnn_loss
+        ℓ_hnn = mean((hnn(qp, p_hnn) .- (qp_next .- qp)./15.0).^2)
+    else
+        qp_forward = Array(integrate_forward(qp, p_hnn))
+        ℓ_hnn = mean((qp_forward .- qp_next).^2)
+    end
 
     # finally compute a coordinate loss that tries
     # to force the momentum to be related to
     # the velocity
 
     q_now = qp[1:n_manifold,:]
-    p_now = qp[n_mHamilton's equations
-    qp_forward = Array(integrate_forward(qp, p_hnn))
-    ℓ_hnn = mean((qp_forward .- qp_next).^2)
+    p_now = qp[n_manifold+1:end,:]
+
+    q_next = qp_next[1:n_manifold, :]
+    p_next = qp_next[n_manifold+1:end, :]
+
+    ℓ_coord = mean((p_now .- (q_next .- q_now)).^2)
+
+    # include knob for hnn loss
+    # return ℓ_ae + ℓ_coord  + 0.1*ℓ_hnn #0.1*ℓ_hnn
+    return ℓ_ae + ℓ_coord  + ℓ_hnn #0.1*ℓ_hnn
+end
+
+
+function loss2(x_now, x_next, params)
+    p_enc = params[1:Np_enc]
+    p_dec = params[Np_enc+1:Np_enc+Np_dec]
+    p_hnn = params[Np_enc+ Np_dec + 1:end]
+
+
+    # compute generalized coordinates from encoder
+    qp = encoder(x_now)
+    qp_next = encoder(x_next)
+
+    # now integrate our coordinates forward using
+    # Hamilton's equations
+    if use_simple_hnn_loss
+        ℓ_hnn = mean((hnn(qp, p_hnn) .- (qp_next .- qp)./15.0).^2)
+    else
+        qp_forward = Array(integrate_forward(qp, p_hnn))
+        ℓ_hnn = mean((qp_forward .- qp_next).^2)
+    end
+
     return ℓ_hnn
 end
 
@@ -244,30 +280,27 @@ end
 callback()
 
 
-# do second loop with just hnn loss
+# # perform second training on just the hnn loss
+# opt = ADAM(0.001)  # we should set the decay rate too
 
-opt = ADAM(0.005)  # we should set the decay rate too
+# # for second batch make sure we only work on the hnn layer
+# epochs = 1
+# for epoch in 1:epochs
+#     println("epoch: ", epoch)
 
-epochs = 1
-for epoch in 1:epochs
-    println("epoch: ", epoch)
-
-    for (x, y) in dataloader
-        gs = ReverseDiff.gradient(p -> loss2(x, y, p), params)
-        Flux.Optimise.update!(opt, params, gs)
-        callback()
-    end
-end
-callback()
-
+#     for (x, y) in dataloader
+#         gs = ReverseDiff.gradient(p -> loss2(x, y, p), params)
+#         Flux.Optimise.update!(opt, params, gs)
+#         callback()
+#     end
+# end
+# callback()
 
 
 plot(losses, ylabel="loss", xlabel="iteration", label="", lw=3)
 
 
 # now let's visualize the Hamiltonian
-p
-
 Xfinal = hcat(Xnow_train, Xnow_test)
 
 qps = encoder(Xfinal)
@@ -280,9 +313,10 @@ p_max = maximum(qps[2,:])
 q_min
 q_max
 
-npoints = 500
-qs = Float32.(range(3*q_min, stop=3*q_max, length=npoints))
-ps = range(3 * p_min, stop=3*p_max, length=npoints)
+npoints = 1000
+coord_mult =10
+qs = Float32.(range(coord_mult*q_min, stop=coord_mult*q_max, length=npoints))
+ps = range(coord_mult * p_min, stop=coord_mult*p_max, length=npoints)
 Hs = [Float64(hamiltonian([q, p])[1]) for q ∈ qs, p ∈ ps]
 
 
@@ -296,11 +330,12 @@ p1 = contour(qs,
              ylabel="p",
              title="fitted Hamiltonian",
              #legend=false
+             margins=5*Plots.mm
              )
 
+savefig("hamiltonian_cn_1--2022.pdf")
+savefig("hamiltonian_cn_1--2022.png")
 
-savefig("./hamiltonian_cn_1--2022.pdf")
-savefig("./hamiltonian_cn_1--2022.png")
 
 # times_tot = [times_train..., times_test...]
 # tstart = minimum(times_tot)

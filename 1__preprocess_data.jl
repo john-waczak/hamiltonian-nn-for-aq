@@ -6,6 +6,9 @@ using Dates
 using Statistics
 using DataInterpolations
 
+include("convolutions_1d.jl")
+
+
 raw_paths = Dict("central_node_1" => "./data/raw/central_node_1",
                  "central_node_2" => "./data/raw/central_node_2",
                  "central_node_4" => "./data/raw/central_node_4"
@@ -143,6 +146,29 @@ basepath2 = joinpath(raw_paths["central_node_4"], "2023/05/11")
 df2 = process_one_day(basepath2, sensors_to_include)
 
 
+l_kernel = 10  # 5 minute windowed average
+use_gauss = false
+k = mean_kernel(l_kernel)
+if use_gauss
+    k = gaussian_kernel_1D(l_kernel)
+end
+
+
+function smooth_data(df, k)
+    df_new = copy(df)
+    cols_to_use = [n for n ∈ names(df) if !(n ∈ ["ts", "dateTime", "device_name"])]
+    for col_name ∈ cols_to_use
+        df_new[:,col_name] .= convolve(df[:,col_name], k)
+    end
+
+    return df_new
+end
+
+# test out the smoothing on pm 2.5
+df_smooth = smooth_data(df2, k)
+p1 = plot(df2.pm2_5[1:200], label="raw", lw=2)
+plot!(p1, df_smooth.pm2_5[1:200], label="smoothed", lw=2)
+
 
 
 
@@ -187,6 +213,8 @@ Threads.@threads for path ∈ paths_to_process
 
     try
         df = process_one_day(path, sensors_to_include)
+
+        df = smooth_data(df, k)
 
         # add column with device name for book keeping
         df.device_name = ["Central Node 4" for _ ∈ 1:nrow(df)]
@@ -346,7 +374,7 @@ end
 
 
 df_final = DataFrame()
-Nwindow = 4
+Nwindow = 2
 @showprogress for f ∈ files
     df = generate_multistep_df(f; Nwindow=Nwindow)
     df_out = hcat(df[1:end-1,:], rename(x->x*"_next", df[2:end, Not([:ts, :dateTime, :device_name])]))
@@ -355,6 +383,8 @@ Nwindow = 4
 #    push!(dfs_next, df[2:end, :])
 end
 
+
+dropmissing!(df_final) # drop any rows with missing values
 
 # df_final, df_final_next = get_collected_dfs(files)
 
